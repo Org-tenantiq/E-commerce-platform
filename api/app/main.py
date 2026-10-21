@@ -8,13 +8,15 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from api.app.config import get_jwt_secret
 from api.app.db import init_db
 from api.app.routers import auth
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Create database tables on startup."""
+    """Validate configuration and create database tables on startup."""
+    get_jwt_secret()
     init_db()
     yield
 

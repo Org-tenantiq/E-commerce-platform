@@ -42,3 +42,28 @@ class UserRead(BaseModel):
     email: str
     role: str
     created_at: datetime
+
+
+class LoginRequest(BaseModel):
+    """Payload for logging in."""
+
+    email: NormalizedEmail
+    password: str
+
+
+class TokenResponse(BaseModel):
+    """Access token response."""
+
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+
+class MeResponse(BaseModel):
+    """The authenticated caller."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    email: str
+    role: str
