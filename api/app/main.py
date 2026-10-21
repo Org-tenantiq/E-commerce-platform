@@ -3,10 +3,24 @@
 Defines `app` and a simple health endpoint used by tests and other components.
 """
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
+from api.app.db import init_db
+from api.app.routers import auth
 
-app = FastAPI(title="E-Commerce API")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Create database tables on startup."""
+    init_db()
+    yield
+
+
+app = FastAPI(title="E-Commerce API", lifespan=lifespan)
+app.include_router(auth.router)
 
 
 @app.get("/health")
