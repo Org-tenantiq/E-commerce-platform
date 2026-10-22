@@ -1,16 +1,22 @@
 """Authentication routes."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.app.db import get_db
 from api.app.models import User
-from api.app.config import ACCESS_TOKEN_TTL_SECONDS
+from api.app.config import (
+    ACCESS_TOKEN_TTL_SECONDS,
+    REFRESH_COOKIE_NAME,
+    REFRESH_COOKIE_PATH,
+    REFRESH_TOKEN_TTL_SECONDS,
+)
 from api.app.deps import get_current_user
 from api.app.passwords import hash_password, verify_password
+from api.app.refresh import issue_refresh_token, rotate_refresh_token
 from api.app.schemas import LoginRequest, MeResponse, RegisterRequest, TokenResponse, UserRead
 from api.app.tokens import create_access_token
 
@@ -18,6 +24,18 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 _CONFLICT = HTTPException(status.HTTP_409_CONFLICT, "Email already registered")
 _DUMMY_HASH = hash_password("dummy-password")
+
+
+def _set_refresh_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        REFRESH_COOKIE_NAME,
+        token,
+        max_age=REFRESH_TOKEN_TTL_SECONDS,
+        path=REFRESH_COOKIE_PATH,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+    )
 
 
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
@@ -36,8 +54,10 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> User:
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
-    """Exchange credentials for an access token."""
+def login(
+    payload: LoginRequest, response: Response, db: Session = Depends(get_db)
+) -> TokenResponse:
+    """Exchange credentials for an access token and a refresh cookie."""
     user = db.scalar(select(User).where(User.email == payload.email))
     # Always run a bcrypt check so unknown emails cost the same as wrong passwords.
     ok = verify_password(payload.password, user.password_hash if user else _DUMMY_HASH)
@@ -47,8 +67,30 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
             "Invalid email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    _set_refresh_cookie(response, issue_refresh_token(db, user.id))
     return TokenResponse(
         access_token=create_access_token(user.id), expires_in=ACCESS_TOKEN_TTL_SECONDS
+    )
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh(
+    response: Response,
+    refresh_token: str | None = Cookie(default=None),
+    db: Session = Depends(get_db),
+) -> TokenResponse:
+    """Rotate the refresh token and return a new access token."""
+    result = rotate_refresh_token(db, refresh_token) if refresh_token else None
+    if result is None:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "Invalid refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user_id, new_token = result
+    _set_refresh_cookie(response, new_token)
+    return TokenResponse(
+        access_token=create_access_token(user_id), expires_in=ACCESS_TOKEN_TTL_SECONDS
     )
 
 
