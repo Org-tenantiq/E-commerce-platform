@@ -7,7 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from api.app.db import get_db
-from api.app.models import User
+from api.app.models import RevokedToken, User
 from api.app.tokens import decode_access_token
 
 _bearer = HTTPBearer(auto_error=False)
@@ -32,6 +32,8 @@ def get_current_user(
         claims = decode_access_token(creds.credentials)
         user_id = int(claims["sub"])
     except (jwt.PyJWTError, ValueError):
+        raise _unauthorized()
+    if db.get(RevokedToken, claims["jti"]) is not None:
         raise _unauthorized()
     user = db.get(User, user_id)
     if user is None:
