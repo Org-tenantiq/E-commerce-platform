@@ -1,0 +1,58 @@
+"""Authentication routes."""
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from api.app.db import get_db
+from api.app.models import User
+from api.app.config import ACCESS_TOKEN_TTL_SECONDS
+from api.app.deps import get_current_user
+from api.app.passwords import hash_password, verify_password
+from api.app.schemas import LoginRequest, MeResponse, RegisterRequest, TokenResponse, UserRead
+from api.app.tokens import create_access_token
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+_CONFLICT = HTTPException(status.HTTP_409_CONFLICT, "Email already registered")
+_DUMMY_HASH = hash_password("dummy-password")
+
+
+@router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> User:
+    """Register a new customer account."""
+    if db.scalar(select(User).where(User.email == payload.email)) is not None:
+        raise _CONFLICT
+    user = User(email=payload.email, password_hash=hash_password(payload.password), role="customer")
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise _CONFLICT
+    return user
+
+
+@router.post("/login", response_model=TokenResponse)
+def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
+    """Exchange credentials for an access token."""
+    user = db.scalar(select(User).where(User.email == payload.email))
+    # Always run a bcrypt check so unknown emails cost the same as wrong passwords.
+    ok = verify_password(payload.password, user.password_hash if user else _DUMMY_HASH)
+    if user is None or not ok:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "Invalid email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return TokenResponse(
+        access_token=create_access_token(user.id), expires_in=ACCESS_TOKEN_TTL_SECONDS
+    )
+
+
+@router.get("/me", response_model=MeResponse)
+def me(user: User = Depends(get_current_user)) -> User:
+    """Return the authenticated caller."""
+    return user
