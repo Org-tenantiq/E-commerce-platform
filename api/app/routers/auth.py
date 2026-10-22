@@ -1,7 +1,11 @@
 """Authentication routes."""
 from __future__ import annotations
 
+import jwt
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -14,11 +18,11 @@ from api.app.config import (
     REFRESH_COOKIE_PATH,
     REFRESH_TOKEN_TTL_SECONDS,
 )
-from api.app.deps import get_current_user
+from api.app.deps import _bearer, get_current_user
 from api.app.passwords import hash_password, verify_password
-from api.app.refresh import issue_refresh_token, rotate_refresh_token
+from api.app.refresh import deny_access_token, issue_refresh_token, revoke_family, rotate_refresh_token
 from api.app.schemas import LoginRequest, MeResponse, RegisterRequest, TokenResponse, UserRead
-from api.app.tokens import create_access_token
+from api.app.tokens import create_access_token, decode_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -98,3 +102,29 @@ def refresh(
 def me(user: User = Depends(get_current_user)) -> User:
     """Return the authenticated caller."""
     return user
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+def logout(
+    response: Response,
+    refresh_token: str | None = Cookie(default=None),
+    creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: Session = Depends(get_db),
+) -> None:
+    """End the session: revoke the refresh family, denylist the access token, clear the cookie."""
+    if refresh_token:
+        revoke_family(db, refresh_token)
+    if creds is not None:
+        try:
+            claims = decode_access_token(creds.credentials)
+            exp = datetime.fromtimestamp(claims["exp"], timezone.utc)
+            deny_access_token(db, claims["jti"], exp)
+        except (jwt.PyJWTError, ValueError, TypeError):
+            pass  # already invalid; nothing to denylist
+    response.delete_cookie(
+        REFRESH_COOKIE_NAME,
+        path=REFRESH_COOKIE_PATH,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+    )

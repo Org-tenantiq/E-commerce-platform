@@ -5,11 +5,11 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from api.app.config import REFRESH_TOKEN_TTL_SECONDS
-from api.app.models import RefreshToken
+from api.app.models import RefreshToken, RevokedToken
 
 
 def hash_token(token: str) -> str:
@@ -58,3 +58,24 @@ def rotate_refresh_token(db: Session, token: str) -> tuple[int, str] | None:
     new_token = _new(db, row.user_id, row.family_id)
     db.commit()
     return row.user_id, new_token
+
+
+def revoke_family(db: Session, token: str) -> None:
+    """Revoke every token in the family of the given refresh token; unknown tokens are a no-op."""
+    row = db.scalar(select(RefreshToken).where(RefreshToken.token_hash == hash_token(token)))
+    if row is None:
+        return
+    db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.family_id == row.family_id, RefreshToken.revoked_at.is_(None))
+        .values(revoked_at=datetime.now(timezone.utc))
+    )
+    db.commit()
+
+
+def deny_access_token(db: Session, jti: str, expires_at: datetime) -> None:
+    """Denylist a jti until its exp and purge rows whose tokens have already expired."""
+    db.execute(delete(RevokedToken).where(RevokedToken.expires_at <= datetime.now(timezone.utc)))
+    if db.get(RevokedToken, jti) is None:
+        db.add(RevokedToken(jti=jti, expires_at=expires_at))
+    db.commit()
