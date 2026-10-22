@@ -31,9 +31,31 @@ function send(input: string, init: RequestInit): Promise<Response> {
 
 export const authClient = {
   async login(email: string, password: string): Promise<void> {
-    if (!(await postToken("/api/auth/login", { email, password }))) {
-      throw new Error("Login failed");
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    if (!res.ok) {
+      throw { status: res.status };
     }
+    const data = (await res.json()) as { access_token?: string };
+    accessToken = data.access_token ?? null;
+  },
+
+  async register(email: string, password: string): Promise<void> {
+    const res = await fetch("/api/auth/register", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    if (!res.ok) {
+      throw { status: res.status };
+    }
+    const data = (await res.json()) as { access_token?: string };
+    accessToken = data.access_token ?? null;
   },
 
   async request(input: string, init: RequestInit = {}): Promise<Response> {
