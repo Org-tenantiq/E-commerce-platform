@@ -1,19 +1,23 @@
 """Authentication routes."""
 from __future__ import annotations
 
+import math
 import jwt
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.app.db import get_db
-from api.app.models import User
+from api.app import clock
+from api.app.models import LoginFailure, User
 from api.app.config import (
     ACCESS_TOKEN_TTL_SECONDS,
+    LOGIN_FAILURE_WINDOW_SECONDS,
+    LOGIN_MAX_FAILURES,
     REFRESH_COOKIE_NAME,
     REFRESH_COOKIE_PATH,
     REFRESH_TOKEN_TTL_SECONDS,
@@ -62,15 +66,38 @@ def login(
     payload: LoginRequest, response: Response, db: Session = Depends(get_db)
 ) -> TokenResponse:
     """Exchange credentials for an access token and a refresh cookie."""
+    now = clock.now()
+    window = timedelta(seconds=LOGIN_FAILURE_WINDOW_SECONDS)
+    db.execute(delete(LoginFailure).where(LoginFailure.attempted_at <= now - window))
+    recent = db.scalars(
+        select(LoginFailure.attempted_at)
+        .where(LoginFailure.email == payload.email)
+        .order_by(LoginFailure.attempted_at)
+    ).all()
+    if len(recent) >= LOGIN_MAX_FAILURES:
+        oldest = recent[-LOGIN_MAX_FAILURES]
+        if oldest.tzinfo is None:
+            oldest = oldest.replace(tzinfo=timezone.utc)
+        wait = max(1, math.ceil((oldest + window - now).total_seconds()))
+        db.commit()
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Too many failed login attempts",
+            headers={"Retry-After": str(wait)},
+        )
     user = db.scalar(select(User).where(User.email == payload.email))
     # Always run a bcrypt check so unknown emails cost the same as wrong passwords.
     ok = verify_password(payload.password, user.password_hash if user else _DUMMY_HASH)
     if user is None or not ok:
+        db.add(LoginFailure(email=payload.email, attempted_at=now))
+        db.commit()
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
             "Invalid email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    db.execute(delete(LoginFailure).where(LoginFailure.email == payload.email))
+    db.commit()
     _set_refresh_cookie(response, issue_refresh_token(db, user.id))
     return TokenResponse(
         access_token=create_access_token(user.id), expires_in=ACCESS_TOKEN_TTL_SECONDS

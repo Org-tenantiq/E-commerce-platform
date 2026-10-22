@@ -47,3 +47,13 @@ class RevokedToken(Base):
 
     jti: Mapped[str] = mapped_column(String(64), primary_key=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class LoginFailure(Base):
+    """A failed login attempt, keyed by normalised email."""
+
+    __tablename__ = "login_failures"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    attempted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
