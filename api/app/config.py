@@ -16,3 +16,7 @@ def get_jwt_secret() -> str:
             f"JWT_SECRET must be set to at least {MIN_JWT_SECRET_LENGTH} characters"
         )
     return secret
+
+REFRESH_TOKEN_TTL_SECONDS = 604800
+REFRESH_COOKIE_NAME = "refresh_token"
+REFRESH_COOKIE_PATH = "/auth"
