@@ -17,3 +17,7 @@ runtime_version: '3.12'
 member_dirs:
   python-pytest: .
   node-vitest: .
+start_cmd: sh -c 'JWT_SECRET="$(python -c "import secrets; print(secrets.token_hex(32))")"
+  python -m uvicorn api.app.main:app --host 127.0.0.1 --port 8000 & exec npx vite
+  --host 0.0.0.0 --port 5173 --strictPort'
+start_port: 5173
