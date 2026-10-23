@@ -1,8 +1,12 @@
 import { useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { authClient } from "../api/authClient";
 import { validateEmail, validatePassword } from "../auth/validate";
+import { getRedirectPath } from "../auth/returnTo";
 
 export default function RegisterPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<{ email?: string; password?: string; server?: string }>({});
@@ -28,6 +32,9 @@ export default function RegisterPage() {
 
     try {
       await authClient.register(email, password);
+      const returnTo = searchParams.get("returnTo");
+      const redirectPath = getRedirectPath(returnTo);
+      navigate(redirectPath, { replace: true });
     } catch (err) {
       const error = err as { status?: number };
       if (error.status === 409) {
