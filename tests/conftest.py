@@ -5,16 +5,22 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 
+# Set JWT_SECRET for tests if not already set
+if not os.getenv("JWT_SECRET"):
+    os.environ["JWT_SECRET"] = "test-secret-key-for-testing"
+
 from api.app.main import app
 
 # Try to import database components - if they don't exist, tests will fail naturally
 # when they try to use the missing endpoints
 Base = None
-get_db = None
+get_db_auth = None
+get_db_deps = None
 
 try:
     from api.app.db import Base
-    from api.app.routers.auth import get_db
+    from api.app.routers.auth import get_db as get_db_auth
+    from api.app.deps import get_db as get_db_deps
 except ImportError:
     pass
 
@@ -22,7 +28,7 @@ except ImportError:
 @pytest.fixture(scope="function")
 def temp_db():
     """Create a temporary SQLite database for testing."""
-    if Base is None or get_db is None:
+    if Base is None:
         # If database components are not available, yield None and let tests fail naturally
         yield None
         return
@@ -49,7 +55,10 @@ def temp_db():
         finally:
             db.close()
 
-    app.dependency_overrides[get_db] = override_get_db
+    if get_db_auth is not None:
+        app.dependency_overrides[get_db_auth] = override_get_db
+    if get_db_deps is not None:
+        app.dependency_overrides[get_db_deps] = override_get_db
 
     yield engine
 
