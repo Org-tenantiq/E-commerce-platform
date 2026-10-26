@@ -195,6 +195,31 @@ class TestLoginAC2:
         assert response.status_code == 200
         assert "access_token" in response.json()
 
+    def test_login_unknown_email_returns_401_with_www_authenticate(self, client: TestClient):
+        """Test that unknown email returns 401 with WWW-Authenticate header"""
+        response = client.post(
+            "/auth/login",
+            json={"email": "unknown@example.com", "password": "SomePassword123"}
+        )
+        assert response.status_code == 401
+        assert "www-authenticate" in response.headers or "WWW-Authenticate" in response.headers
+
+    def test_login_wrong_password_returns_401_with_www_authenticate(self, client: TestClient):
+        """Test that wrong password returns 401 with WWW-Authenticate header"""
+        email = "test@example.com"
+        password = "ValidPassword123"
+        client.post(
+            "/auth/register",
+            json={"email": email, "password": password}
+        )
+
+        response = client.post(
+            "/auth/login",
+            json={"email": email, "password": "WrongPassword123"}
+        )
+        assert response.status_code == 401
+        assert "www-authenticate" in response.headers or "WWW-Authenticate" in response.headers
+
 
 class TestLoginAC3:
     """AC-3: Given GET /me, valid bearer token returns user, invalid/missing token returns 401 with WWW-Authenticate: Bearer"""
