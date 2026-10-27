@@ -1,48 +1,54 @@
 import pytest
-from api.app.passwords import (
-    hash_password,
-    verify_password,
-    MIN_PASSWORD_LENGTH,
-    MAX_PASSWORD_BYTES,
-)
+from api.app.passwords import hash_password, verify_password
 
 
-def test_AC_2_1_hash_returns_bcrypt_prefix():
-    """AC-2.1: hash_password returns a bcrypt hash starting with '$2b$' and differs from the input"""
-    password = "correcthorsebatterystaple"
-    # sanity check the example meets the MIN_PASSWORD_LENGTH requirement
-    assert len(password) >= MIN_PASSWORD_LENGTH
+class TestHashPassword:
+    """AC-2: hash_password returns bcrypt hash and verify_password works"""
 
-    pw_hash = hash_password(password)
-    assert isinstance(pw_hash, str)
-    assert pw_hash.startswith("$2b$")
-    assert pw_hash != password
+    def test_hash_password_returns_bcrypt_hash(self):
+        password = "ValidPassword123"
+        hashed = hash_password(password)
+        assert hashed.startswith("$2b$")
+        assert hashed != password
 
+    def test_verify_password_returns_true_for_correct_password(self):
+        password = "ValidPassword123"
+        hashed = hash_password(password)
+        assert verify_password(password, hashed) is True
 
-def test_AC_2_2_verify_true_and_false():
-    """AC-2.2: verify_password returns True for the correct password and False for an incorrect one"""
-    password = "correcthorsebatterystaple"
-    pw_hash = hash_password(password)
+    def test_verify_password_returns_false_for_wrong_password(self):
+        password = "ValidPassword123"
+        wrong_password = "WrongPassword456"
+        hashed = hash_password(password)
+        assert verify_password(wrong_password, hashed) is False
 
-    assert verify_password(password, pw_hash) is True
-    assert verify_password("wrong", pw_hash) is False
-
-
-def test_AC_3_1_short_password_raises():
-    """AC-3.1: passwords shorter than MIN_PASSWORD_LENGTH raise ValueError"""
-    short_pw = "short"
-    # ensure the test input is indeed shorter than the module's MIN_PASSWORD_LENGTH
-    assert len(short_pw) < MIN_PASSWORD_LENGTH
-
-    with pytest.raises(ValueError):
-        hash_password(short_pw)
+    def test_verify_password_handles_malformed_hash(self):
+        password = "ValidPassword123"
+        malformed_hash = "not_a_valid_hash"
+        # Should not raise, should return False
+        result = verify_password(password, malformed_hash)
+        assert result is False
 
 
-def test_AC_3_2_too_long_bytes_raises():
-    """AC-3.2: passwords whose UTF-8 encoding is longer than MAX_PASSWORD_BYTES raise ValueError"""
-    long_pw = "a" * (MAX_PASSWORD_BYTES + 1)
-    # ensure the encoded length exceeds MAX_PASSWORD_BYTES
-    assert len(long_pw.encode("utf-8")) > MAX_PASSWORD_BYTES
+class TestPasswordValidation:
+    """AC-3: Passwords outside 8-72 bytes range raise ValueError"""
 
-    with pytest.raises(ValueError):
-        hash_password(long_pw)
+    def test_hash_password_raises_for_password_under_8_characters(self):
+        password = "Short1"  # 6 characters
+        with pytest.raises(ValueError):
+            hash_password(password)
+
+    def test_hash_password_raises_for_password_over_72_bytes(self):
+        password = "a" * 73  # 73 bytes
+        with pytest.raises(ValueError):
+            hash_password(password)
+
+    def test_hash_password_accepts_exactly_8_characters(self):
+        password = "Valid123"  # exactly 8 characters
+        hashed = hash_password(password)
+        assert hashed.startswith("$2b$")
+
+    def test_hash_password_accepts_exactly_72_bytes(self):
+        password = "a" * 72  # exactly 72 bytes
+        hashed = hash_password(password)
+        assert hashed.startswith("$2b$")

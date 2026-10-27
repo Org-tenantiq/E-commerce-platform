@@ -1,31 +1,40 @@
-"""Access token creation and verification (HS256)."""
-from __future__ import annotations
-
-import time
-import uuid
-
 import jwt
+import uuid
+from datetime import datetime, timedelta
+from typing import Dict, Any, Optional
 
-from api.app.config import ACCESS_TOKEN_TTL_SECONDS, JWT_ALGORITHM, get_jwt_secret
+TOKEN_EXPIRY_SECONDS = 900
 
 
-def create_access_token(user_id: int) -> str:
-    """Issue a signed token for the user, valid for ACCESS_TOKEN_TTL_SECONDS."""
-    now = int(time.time())
-    claims = {
+def create_access_token(user_id: int, secret: str) -> tuple[str, int]:
+    """Create an HS256 JWT access token.
+
+    Returns:
+        tuple of (token, expires_in_seconds)
+    """
+    now = datetime.utcnow()
+    expires_in = TOKEN_EXPIRY_SECONDS
+    expiration = now + timedelta(seconds=expires_in)
+
+    payload = {
         "sub": str(user_id),
-        "iat": now,
-        "exp": now + ACCESS_TOKEN_TTL_SECONDS,
-        "jti": uuid.uuid4().hex,
+        "iat": int(now.timestamp()),
+        "exp": int(expiration.timestamp()),
+        "jti": str(uuid.uuid4()),
     }
-    return jwt.encode(claims, get_jwt_secret(), algorithm=JWT_ALGORITHM)
+
+    token = jwt.encode(payload, secret, algorithm="HS256")
+    return token, expires_in
 
 
-def decode_access_token(token: str) -> dict:
-    """Decode and validate a token; raises jwt.PyJWTError on any failure."""
-    return jwt.decode(
-        token,
-        get_jwt_secret(),
-        algorithms=[JWT_ALGORITHM],
-        options={"require": ["sub", "iat", "exp", "jti"]},
-    )
+def decode_access_token(token: str, secret: str) -> Optional[Dict[str, Any]]:
+    """Decode an HS256 JWT access token.
+
+    Returns:
+        Decoded payload if valid, None if invalid or expired.
+    """
+    try:
+        payload = jwt.decode(token, secret, algorithms=["HS256"])
+        return payload
+    except (jwt.InvalidTokenError, jwt.ExpiredSignatureError, jwt.DecodeError):
+        return None

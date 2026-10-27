@@ -1,33 +1,14 @@
-"""SQLAlchemy 2.0 engine, session factory and FastAPI session dependency."""
-from __future__ import annotations
-
-import os
-from collections.abc import Iterator
-
 from sqlalchemy import create_engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
+from contextlib import contextmanager
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./app.db")
+Base = declarative_base()
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
-)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
-
-
-class Base(DeclarativeBase):
-    """Declarative base for all ORM models."""
+# Production database
+engine = create_engine("sqlite:///./ecommerce.db", connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-def init_db() -> None:
-    """Create all tables if they do not exist."""
-    from api.app import models  # noqa: F401  (register models)
-
-    Base.metadata.create_all(engine)
-
-
-def get_db() -> Iterator[Session]:
-    """Yield a database session and close it afterwards."""
-    with SessionLocal() as session:
-        yield session
+def create_db_engine(database_url: str = "sqlite:///./ecommerce.db"):
+    """Create a SQLAlchemy engine for the given database URL."""
+    return create_engine(database_url, connect_args={"check_same_thread": False})

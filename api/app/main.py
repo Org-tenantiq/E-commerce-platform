@@ -1,37 +1,17 @@
-"""FastAPI application entry point for the E-Commerce API.
-
-Defines `app` and a simple health endpoint used by tests and other components.
-"""
-
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
-
-from api.app.config import get_jwt_secret
-from api.app.db import init_db
+from api.app.db import Base, create_db_engine
 from api.app.routers import auth
 
+app = FastAPI()
 
-@asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Validate configuration and create database tables on startup."""
-    get_jwt_secret()
-    init_db()
-    yield
+# Initialize database
+engine = create_db_engine()
+Base.metadata.create_all(bind=engine)
 
-
-app = FastAPI(title="E-Commerce API", lifespan=lifespan)
+# Include routers
 app.include_router(auth.router)
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    """Health check endpoint.
-
-    Returns a tiny JSON object used by tests and orchestration systems.
-
-    Returns:
-        A mapping with a single key "status" and value "ok".
-    """
+def health():
     return {"status": "ok"}

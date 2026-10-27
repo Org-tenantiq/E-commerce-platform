@@ -1,41 +1,28 @@
-"""Pydantic request/response schemas."""
-from __future__ import annotations
-
+from pydantic import BaseModel, EmailStr, field_validator, ConfigDict
 from datetime import datetime
-from typing import Annotated
-
-from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, EmailStr, field_validator
-
-from api.app.passwords import MAX_PASSWORD_BYTES, MIN_PASSWORD_LENGTH
-
-
-def _strip(value: object) -> object:
-    return value.strip() if isinstance(value, str) else value
-
-
-NormalizedEmail = Annotated[EmailStr, BeforeValidator(_strip), AfterValidator(str.lower)]
+from typing import Optional
 
 
 class RegisterRequest(BaseModel):
-    """Payload for registering a new customer account."""
-
-    email: NormalizedEmail
+    email: EmailStr
     password: str
 
-    @field_validator("password")
+    @field_validator('email')
     @classmethod
-    def _check_password(cls, value: str) -> str:
-        """Enforce the minimum length and the bcrypt byte limit."""
-        if len(value) < MIN_PASSWORD_LENGTH:
-            raise ValueError(f"password must be at least {MIN_PASSWORD_LENGTH} characters")
-        if len(value.encode("utf-8")) > MAX_PASSWORD_BYTES:
-            raise ValueError(f"password must be at most {MAX_PASSWORD_BYTES} bytes")
-        return value
+    def email_must_be_stripped(cls, v):
+        if v != v.strip():
+            raise ValueError('email must not have leading or trailing spaces')
+        return v
+
+    @field_validator('password')
+    @classmethod
+    def password_must_be_at_least_8_chars(cls, v):
+        if len(v) < 8:
+            raise ValueError('password must be at least 8 characters')
+        return v
 
 
-class UserRead(BaseModel):
-    """Public representation of a user; never includes credentials."""
-
+class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -45,23 +32,17 @@ class UserRead(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    """Payload for logging in."""
-
-    email: NormalizedEmail
+    email: EmailStr
     password: str
 
 
-class TokenResponse(BaseModel):
-    """Access token response."""
-
+class LoginResponse(BaseModel):
     access_token: str
-    token_type: str = "bearer"
+    token_type: str
     expires_in: int
 
 
-class MeResponse(BaseModel):
-    """The authenticated caller."""
-
+class CurrentUserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
